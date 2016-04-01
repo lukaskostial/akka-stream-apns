@@ -1,7 +1,7 @@
 import sbt._
 
 object Dependencies {
-  val akkaStream        = "com.typesafe.akka" %% "akka-stream"         % "2.4.2"
+  val akkaStream        = "com.typesafe.akka" %% "akka-stream"         % "2.4.3"
   val netty             = "io.netty"          %  "netty-all"           % "4.1.0.CR5"
 
   val sprayJson         = "io.spray"          %% "spray-json"          % "1.3.2"
@@ -11,7 +11,7 @@ object Dependencies {
   val circeGeneric      = "io.circe"          %% "circe-generic"       % "0.3.0"
 
   val scalaTest         = "org.scalatest"     %% "scalatest"           % "2.2.6"
-  val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % "2.4.2"
+  val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % "2.4.3"
 
   val connectorDeps = Seq(akkaStream, netty) ++
     Seq(sprayJson, playJson, liftJson, circeParser).map(_ % Provided) ++
