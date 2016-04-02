@@ -2,7 +2,7 @@ import sbt._
 
 object Dependencies {
   val akkaStream        = "com.typesafe.akka" %% "akka-stream"         % "2.4.3"
-  val netty             = "io.netty"          %  "netty-all"           % "4.1.0.CR5"
+  val netty             = "io.netty"          %  "netty-codec-http2"   % "4.1.0.CR6"
 
   val sprayJson         = "io.spray"          %% "spray-json"          % "1.3.2"
   val playJson          = "com.typesafe.play" %% "play-json"           % "2.5.1"
