@@ -61,16 +61,41 @@ private[apns] abstract class NettyLogic[I, O: ClassTag](
     * completes, the stage is completed.
     */
   private class CloseListener extends ChannelFutureListener {
-    override def operationComplete(f: ChannelFuture): Unit =
-      channelClosed(queue.toList)
+    override def operationComplete(f: ChannelFuture): Unit = channelClosed(())
   }
 
   /**
     * Completes the stage when the channel closes.
+    *
+    * If there are any queued messages (received from the channel but not yet
+    * pushed to the output) they will be emitted before the stage is completed.
     */
-  private val channelClosed = getAsyncCallback[List[O]] {
-    emitMultiple(shape.out, _, () ⇒ completeStage())
-  } invoke _
+  private val channelClosed = getAsyncCallback[Unit](_ ⇒ emitQueue()) invoke _
+
+  private var emitting = false
+
+  /**
+    * When channelClosed is called there still can be a pushOutput call
+    * pending. It is not possible to use the OOTB emitMultiple because elements
+    * delivered by the delayed pushOutput calls must be returned back to the
+    * front of the queue.
+    */
+  private def emitQueue(): Unit = {
+    if (!isClosed(shape.out) && queue.nonEmpty) {
+      emitting = true
+      cancel(shape.in)
+      if (isAvailable(shape.out)) push(shape.out, queue.dequeue())
+      if (queue.nonEmpty) {
+        setHandler(shape.out, new OutHandler {
+          override def onPull(): Unit = {
+            push(shape.out, queue.dequeue())
+            if (queue.isEmpty) completeStage()
+          }
+          override def onDownstreamFinish(): Unit = completeStage()
+        })
+      } else completeStage()
+    } else completeStage()
+  }
 
   class Bridge extends ChannelDuplexHandler with InHandler with OutHandler {
     private var ctx: ChannelHandlerContext = _
@@ -187,7 +212,9 @@ private[apns] abstract class NettyLogic[I, O: ClassTag](
   /**
     * Pushes out data received from the channel.
     */
-  private val pushOutput = getAsyncCallback[O](push(shape.out, _)) invoke _
+  private val pushOutput = getAsyncCallback[O] { elem ⇒
+    if (emitting) queue.+=:(elem) else push(shape.out, elem)
+  } invoke _
 
   /**
     * Requests more data from the input.
