@@ -1,15 +1,21 @@
 package reactivehub.akka.stream.apns
 
 import java.lang.Integer.parseInt
+import reactivehub.akka.stream.apns.DeviceToken.Digits
 
 /**
   * APNs device token. Tokens are either 32 or 100 bytes arrays.
   */
 final class DeviceToken private[apns] (val bytes: List[Byte]) {
-  override def toString: String = bytes.map("%02X" format _).mkString
+  override def toString: String =
+    bytes.foldLeft(new StringBuilder) {
+      case (sb, b) ⇒ sb.append(Digits((b & 0xF0) >> 4)).append(Digits(b & 0x0F))
+    }.toString
 }
 
 object DeviceToken {
+  private val Digits = "0123456789ABCDEF"
+
   def apply(bytes: Seq[Byte]): DeviceToken = {
     require(
       bytes.length == 32 || bytes.length == 100,
