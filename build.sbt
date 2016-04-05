@@ -75,7 +75,7 @@ lazy val examples = (project in file("examples"))
 
 lazy val benchmarks = (project in file("benchmarks"))
   .enablePlugins(JmhPlugin)
-  .dependsOn(connector)
+  .dependsOn(connector % "compile;compile->test")
   .settings(commonSettings)
   .settings(
     publishArtifact := false,
