@@ -2,11 +2,12 @@ package reactivehub.akka.stream.apns
 
 import akka.actor.ActorSystem
 import akka.stream._
+import akka.stream.scaladsl.{Sink, Source}
 import akka.testkit.{ImplicitSender, TestKit, TestKitBase, TestProbe}
 import io.netty.buffer.{ByteBufAllocator, UnpooledByteBufAllocator}
 import io.netty.channel.embedded.EmbeddedChannel
 import io.netty.channel.nio.NioEventLoopGroup
-import io.netty.channel.socket.SocketChannel
+import io.netty.channel.socket.{ChannelInputShutdownEvent, SocketChannel}
 import io.netty.channel.{Channel, ChannelHandlerContext, _}
 import io.netty.handler.codec.LineBasedFrameDecoder
 import io.netty.handler.codec.string.{StringDecoder, StringEncoder}
@@ -16,6 +17,9 @@ import java.util.concurrent.TimeUnit
 import org.scalatest._
 import reactivehub.akka.stream.apns.helper.NettyHelpers
 import reactivehub.akka.stream.apns.helper.NettyHelpers.{InputClosed, Received}
+import scala.collection.mutable
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 class NettyLogicSpec(_system: ActorSystem)
     extends TestKit(_system)
@@ -106,6 +110,18 @@ class NettyLogicSpec(_system: ActorSystem)
     pub.sendNext("Hello\n")
     sub.expectNext("Hello")
   }
+
+  it should "send and receive 10k messages" in
+    withServer(autoClose = true) { (stage, server) ⇒
+      val results = mutable.HashSet.empty[String]
+
+      Await.result(Source.fromIterator(() ⇒ (1 to 10000).iterator)
+        .map(i ⇒ s"Hello $i\n")
+        .via(stage.async)
+        .runWith(Sink.foreach(results += _)), 3.seconds)
+
+      results.size shouldBe 10000
+    }
 
   it should "be able to send data" in withServer { (stage, server) ⇒
     val (pub, _) = run(stage)
@@ -272,6 +288,7 @@ trait EchoHelpers extends NettyHelpers with BeforeAndAfterAll {
   final class EchoServer(
     group: NioEventLoopGroup,
     halfClose: Boolean = true,
+    autoClose: Boolean = false,
     allocator: ByteBufAllocator = UnpooledByteBufAllocator.DEFAULT)
       extends TestableServer[EchoServerConnection](group, halfClose, allocator) {
 
@@ -287,6 +304,12 @@ trait EchoHelpers extends NettyHelpers with BeforeAndAfterAll {
 
         override def channelReadComplete(ctx: ChannelHandlerContext): Unit =
           ctx.flush()
+
+        override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
+          if (evt.isInstanceOf[ChannelInputShutdownEvent] && autoClose)
+            ctx.channel().asInstanceOf[SocketChannel].shutdownOutput()
+          ctx.fireUserEventTriggered(evt)
+        }
       })
     }
 
@@ -313,8 +336,8 @@ trait EchoHelpers extends NettyHelpers with BeforeAndAfterAll {
   def withServer(f: (EchoClientStage, EchoServer) ⇒ Any): Unit =
     withServer()(f)
 
-  def withServer(halfClose: Boolean = true)(f: (EchoClientStage, EchoServer) ⇒ Any): Unit = {
-    val server = new EchoServer(serverGroup)
+  def withServer(halfClose: Boolean = true, autoClose: Boolean = false)(f: (EchoClientStage, EchoServer) ⇒ Any): Unit = {
+    val server = new EchoServer(serverGroup, autoClose = autoClose)
     try {
       val stage = new EchoClientStage(server.address, clientGroup, halfClose)
       f(stage, server)

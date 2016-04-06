@@ -181,13 +181,15 @@ private[apns] abstract class NettyLogic[I, O: ClassTag](
       */
     def addDemand(): Unit = ctx.channel().eventLoop().execute(new Runnable {
       override def run(): Unit =
-        if (queue.nonEmpty) {
-          pushOutput(queue.dequeue())
-          if (queue.size < readQueueLowWatermark && !isAutoRead(ctx))
-            setAutoRead(ctx, autoRead = true)
-        } else {
-          demand += 1
-          if (!isAutoRead(ctx)) ctx.read()
+        if (ctx.channel().isOpen) {
+          if (queue.nonEmpty) {
+            pushOutput(queue.dequeue())
+            if (queue.size < readQueueLowWatermark && !isAutoRead(ctx))
+              setAutoRead(ctx, autoRead = true)
+          } else {
+            demand += 1
+            if (!isAutoRead(ctx)) ctx.read()
+          }
         }
     })
 
