@@ -39,7 +39,7 @@ private[apns] object ResponseUtil {
   private val statusCodeMap = {
     import reactivehub.akka.stream.apns.StatusCode._
 
-    val statusCodes = Seq(OK, BadRequest, Forbidden, MethodNotAllowed,
+    val statusCodes = Seq(OK, BadRequest, Forbidden, NotFound, MethodNotAllowed,
       Gone, RequestEntityTooLarge, TooManyRequests, InternalServerError,
       ServiceUnavailable)
 

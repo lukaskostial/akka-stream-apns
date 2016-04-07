@@ -54,6 +54,7 @@ object StatusCode {
   case object OK extends StatusCodeImpl(200, "Success", true)
   case object BadRequest extends StatusCodeImpl(400, "Bad request")
   case object Forbidden extends StatusCodeImpl(403, "There was an error with the certificate.")
+  case object NotFound extends StatusCodeImpl(404, "Path not found.")
   case object MethodNotAllowed extends StatusCodeImpl(405, "The request used a bad :method value. Only POST requests are supported.")
   case object Gone extends StatusCodeImpl(410, "The device token is no longer active for the topic.")
   case object RequestEntityTooLarge extends StatusCodeImpl(413, "The notification payload was too large.")
