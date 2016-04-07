@@ -18,18 +18,22 @@ and a [device token](https://developer.apple.com/library/ios/documentation/Netwo
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
-import reactivehub.akka.stream.apns.Environment.Sandbox
+import io.netty.channel.nio.NioEventLoopGroup
 import reactivehub.akka.stream.apns.TlsUtil.loadPkcs12FromResource
 import reactivehub.akka.stream.apns._
-import scala.concurrent.Await
-import scala.concurrent.duration.Duration
+import reactivehub.akka.stream.apns.marshallers.SprayJsonSupport
 
 object Main extends App with SprayJsonSupport {
   implicit val system = ActorSystem("system")
   implicit val _ = ActorMaterializer()
 
-  // Flow[Notification, Error, Unit]
-  val apns = ApnsExt(system).notificationService(Sandbox, loadPkcs12FromResource("/cert.p12", "password"))
+  import system.dispatcher
+
+  val group = new NioEventLoopGroup()
+  val apns = ApnsExt(system).connection[Int](
+    Environment.Development,
+    loadPkcs12FromResource("/cert.p12", "password"),
+    group)
 
   val deviceToken = DeviceToken("64-chars hex string")
 
@@ -37,10 +41,13 @@ object Main extends App with SprayJsonSupport {
     .withAlert("Hello!")
     .withBadge(1)
 
-  val f = Source.single(Notification(deviceToken, payload)).via(apns).runForeach(println)
-
-  Await.result(f, Duration.Inf)
-  system.shutdown()
+  Source.single(1 → Notification(deviceToken, payload))
+    .via(apns)
+    .runForeach(println)
+    .onComplete { _ ⇒
+      group.shutdownGracefully()
+      system.terminate()
+    }
 }
 ```
 
