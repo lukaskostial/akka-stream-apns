@@ -290,7 +290,7 @@ trait EchoHelpers extends NettyHelpers with BeforeAndAfterAll {
     halfClose: Boolean = true,
     autoClose: Boolean = false,
     allocator: ByteBufAllocator = UnpooledByteBufAllocator.DEFAULT)
-      extends TestableServer[EchoServerConnection](group, halfClose, allocator) {
+      extends TestableServer[EchoServerConnection](group, halfClose, allocator = allocator) {
 
     override protected def setup(pipeline: ChannelPipeline): Unit = {
       pipeline.addLast(new LineBasedFrameDecoder(80, false, false))

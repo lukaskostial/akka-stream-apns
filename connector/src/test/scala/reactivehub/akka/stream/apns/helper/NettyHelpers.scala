@@ -26,6 +26,7 @@ object NettyHelpers {
   case object Closed extends ChannelEvent
   case object InputClosed extends ChannelEvent
 
+  case object ChannelReady
   final case class Received(data: Any)
 }
 
@@ -91,6 +92,7 @@ trait NettyHelpers {
 
   abstract class TestableServer[T: ClassTag](
     group: NioEventLoopGroup,
+    channelReadyWhenActive: Boolean = true,
     halfClose: Boolean = true,
     allocator: ByteBufAllocator = UnpooledByteBufAllocator.DEFAULT)
       extends AbstractServer[NioServerSocketChannel] {
@@ -114,19 +116,30 @@ trait NettyHelpers {
               private val probe = TestProbe()
               private val dataProbe = TestProbe()
 
+              override def handlerAdded(ctx: ChannelHandlerContext): Unit = {
+                if (ctx.channel().isActive && channelReadyWhenActive)
+                  ctx.pipeline().fireUserEventTriggered(ChannelReady)
+                super.handlerAdded(ctx)
+              }
+
               override def channelActive(ctx: ChannelHandlerContext): Unit = {
-                serverProbe.ref ! createConnection(ctx.channel(), probe, dataProbe)
-                ctx.fireChannelActive()
+                if (channelReadyWhenActive)
+                  ctx.pipeline().fireUserEventTriggered(ChannelReady)
+                super.channelActive(ctx)
               }
 
               override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
                 evt match {
+                  case ChannelReady ⇒
+                    val c = createConnection(ctx.channel(), probe, dataProbe)
+                    serverProbe.ref ! c
+
+                  case Received(data)               ⇒ dataProbe.ref ! data
                   case _: ChannelEvent              ⇒ probe.ref ! evt
                   case _: ChannelInputShutdownEvent ⇒ probe.ref ! InputClosed
-                  case Received(data)               ⇒ dataProbe.ref ! data
                   case _                            ⇒
                 }
-                ctx.fireUserEventTriggered(evt)
+                super.userEventTriggered(ctx, evt)
               }
             }
 
