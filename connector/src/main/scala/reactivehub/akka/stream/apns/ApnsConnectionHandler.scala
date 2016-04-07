@@ -2,9 +2,7 @@ package reactivehub.akka.stream.apns
 
 import io.netty.buffer.ByteBuf
 import io.netty.channel.{ChannelHandlerContext, ChannelPromise}
-import io.netty.handler.codec.http2.Http2Error.PROTOCOL_ERROR
-import io.netty.handler.codec.http2.Http2Exception.connectionError
-import io.netty.handler.codec.http2.{AbstractHttp2ConnectionHandlerBuilder, _}
+import io.netty.handler.codec.http2._
 import io.netty.util.concurrent.PromiseCombiner
 import io.netty.util.internal.ObjectUtil._
 import java.nio.charset.StandardCharsets.UTF_8
@@ -199,8 +197,10 @@ private[apns] final class ApnsConnectionHandler(
     override def onGoAwayRead(ctx: ChannelHandlerContext, lastStreamId: Int,
       errorCode: Long, debugData: ByteBuf): Unit = {
 
-      val body = extractBody(debugData.toString(UTF_8))
-      reasonPromise.success(Some(body.reason))
+      extractBody(debugData.toString(UTF_8)) match {
+        case Right(body) ⇒ reasonPromise.success(body.map(_.reason))
+        case Left(msg)   ⇒ error(msg)
+      }
     }
 
     override def onStreamRemoved(stream: Http2Stream): Unit =
@@ -217,42 +217,46 @@ private[apns] final class ApnsConnectionHandler(
 
       removeStream(stream)
 
-      (extractStatusCode(headers), data) match {
-        case (OK, _) ⇒
+      extractStatusCode(headers) match {
+        case Left(msg) ⇒ error(stream, msg)
+
+        case Right(OK) ⇒
           ctx.fireChannelRead(correlationId → Response.Success)
 
-        case (sc, Some(str)) ⇒
-          val body = extractBody(str)
-          val failure = Response.Failure(sc, body.reason, body.timestamp)
-          ctx.fireChannelRead(correlationId → failure)
+        case Right(sc) ⇒
+          extractBody(data.getOrElse("")) match {
+            case Right(Some(body)) ⇒
+              val failure = Response.Failure(sc, body.reason, body.timestamp)
+              ctx.fireChannelRead(correlationId → failure)
 
-        case (sc, None) if sc.isFailure ⇒
-          throw error("DATA frame not received")
+            case Right(_)  ⇒ error(stream, "DATA frame not received")
+            case Left(msg) ⇒ error(stream, msg)
+          }
       }
     }
 
-    private def extractStatusCode(headers: Http2Headers): StatusCode = {
-      if (!headers.contains(HeaderStatus))
-        throw error(s"Header $HeaderStatus missing")
-
-      parseStatusCode(headers.status().toString.toInt) match {
-        case Some(statusCode) ⇒ statusCode
-        case _ ⇒
-          throw error(s"Header $HeaderStatus does not contain a valid status code")
-      }
-    }
-
-    private def extractBody(str: String): ResponseBody =
-      Try(unmarshaller.read(str)) match {
-        case Success(body) ⇒ body
-        case Failure(cause) ⇒
-          throw error(cause, "Body does not contain a valid JSON")
+    private def extractStatusCode(headers: Http2Headers): Either[String, StatusCode] =
+      if (!headers.contains(HeaderStatus)) Left(s"Header $HeaderStatus missing")
+      else {
+        val status = headers.get(HeaderStatus)
+        Try(status.toString.toInt) match {
+          case Success(code) ⇒ parseStatusCode(code)
+            .toRight(s"Header $HeaderStatus contains unknown status code $code")
+          case Failure(_) ⇒ Left(s"Header $HeaderStatus is invalid")
+        }
       }
 
-    private def error(cause: Throwable, msg: String): Http2Exception =
-      connectionError(PROTOCOL_ERROR, cause, msg)
+    private def extractBody(str: String): Either[String, Option[ResponseBody]] =
+      if (str.isEmpty) Right(None)
+      else Try(unmarshaller.read(str)) match {
+        case Success(body)  ⇒ Right(Some(body))
+        case Failure(cause) ⇒ Left("Response data does not contain a valid JSON")
+      }
+
+    private def error(stream: Http2Stream, msg: String): Http2Exception =
+      throw Http2Exception.streamError(stream.id(), Http2Error.PROTOCOL_ERROR, msg)
 
     private def error(msg: String): Http2Exception =
-      connectionError(PROTOCOL_ERROR, msg)
+      throw Http2Exception.connectionError(Http2Error.PROTOCOL_ERROR, msg)
   }
 }
