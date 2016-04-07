@@ -96,17 +96,11 @@ private[apns] final class ApnsConnectionHandler(
   private val dataKey = conn.newKey()
   private val headersKey = conn.newKey()
 
-  private var messageRead = false
-
   override def channelReadComplete(ctx: ChannelHandlerContext): Unit =
     try {
       flush(ctx)
     } finally {
       discardSomeReadBytes()
-      if (messageRead) {
-        messageRead = false
-        if (!ctx.channel().config().isAutoRead) ctx.read()
-      }
       ctx.fireChannelReadComplete()
     }
 
@@ -221,7 +215,6 @@ private[apns] final class ApnsConnectionHandler(
     private def fireChannelRead(ctx: ChannelHandlerContext, stream: Http2Stream,
       correlationId: Any, headers: Http2Headers, data: Option[String]): Unit = {
 
-      messageRead = true
       removeStream(stream)
 
       (extractStatusCode(headers), data) match {
